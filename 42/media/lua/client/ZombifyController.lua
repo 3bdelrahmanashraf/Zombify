@@ -3,6 +3,7 @@
 
 ZombifyController = ZombifyController or {}
 ZombifyController.running = false
+ZombifyController._initialized = false
 
 -- Controller configuration defaults
 ZombifyController.DefaultConfig = {
@@ -16,6 +17,9 @@ ZombifyController.DefaultConfig = {
 
 -- Initialize controller manager
 function ZombifyController.init()
+    if ZombifyController._initialized then return end
+    ZombifyController._initialized = true
+
     print("[ZombifyController] Initializing (placeholder mode)...")
 
     -- Ensure config exists
@@ -130,5 +134,8 @@ function ZombifyController.isRunning()
     return ZombifyController.running
 end
 
--- Initialize on game start
-Events.OnGameStart.Add(ZombifyController.init)
+-- Initialize on game start - only register once
+if not ZombifyController._initialized then
+    ZombifyController._initialized = true
+    Events.OnGameStart.Add(ZombifyController.init)
+end

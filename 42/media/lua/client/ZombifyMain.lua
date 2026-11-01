@@ -4,6 +4,7 @@
 Zombify = Zombify or {}
 Zombify.version = "1.0.0"
 Zombify.modName = "Zombify"
+Zombify._initialized = false
 
 -- Configuration (loaded from ModData, defaults from ZombifyShared)
 Zombify.Config = Zombify.Config or {}
@@ -11,6 +12,9 @@ Zombify.State = Zombify.State or {}
 
 -- Initialize the mod
 function Zombify.init()
+    if Zombify._initialized then return end
+    Zombify._initialized = true
+
     print("[Zombify] Initializing v" .. Zombify.version)
 
     -- Load saved configuration
@@ -20,11 +24,10 @@ function Zombify.init()
     require "ZombifyController"
     require "ZombifyMusicPlayer"
 
-    -- Register events
+    -- Register events (only once)
     Events.OnGameStart.Add(Zombify.onGameStart)
     Events.OnTick.Add(Zombify.onTick)
     Events.OnKeyPressed.Add(Zombify.onKeyPressed)
-    Events.OnInitGlobalModData.Add(Zombify.init)
 
     -- Add to Mod Options if available
     if ModOptions and ModOptions.getInstance then
@@ -260,5 +263,8 @@ function Zombify.getOverlayPosition()
     return x, y, ow, oh
 end
 
--- Initialize
-Events.OnInitGlobalModData.Add(Zombify.init)
+-- Initialize - only register once
+if not Zombify._initRegistered then
+    Zombify._initRegistered = true
+    Events.OnInitGlobalModData.Add(Zombify.init)
+end

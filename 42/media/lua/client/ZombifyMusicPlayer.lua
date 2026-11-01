@@ -13,6 +13,9 @@ function ZombifyMusicPlayer.init()
     print("[ZombifyMusicPlayer] Initializing demo mode...")
     ZombifyMusicPlayer.demoMode = true
     ZombifyMusicPlayer.currentPlayer = "spotify"
+
+    -- Ensure Zombify.State exists
+    Zombify.State = Zombify.State or {}
     Zombify.State.playerConnected = true
     Zombify.State.playerType = "Spotify"
     print("[ZombifyMusicPlayer] Demo mode initialized")
@@ -24,7 +27,7 @@ function ZombifyMusicPlayer.onTick()
         return
     end
 
-    local currentTime = getTimeInMillis()
+    local currentTime = getTimestampMs()
 
     -- Update demo mode playback
     if ZombifyMusicPlayer.demoMode and Zombify.State.isPlaying then
@@ -46,6 +49,8 @@ function ZombifyMusicPlayer.connect(playerType)
     ZombifyMusicPlayer.disconnectAll()
     ZombifyMusicPlayer.currentPlayer = playerType or "spotify"
     ZombifyMusicPlayer.demoMode = true
+
+    Zombify.State = Zombify.State or {}
     Zombify.State.playerConnected = true
     Zombify.State.playerType = (playerType or "spotify"):gsub("^%l", string.upper)
     print("[ZombifyMusicPlayer] Demo mode enabled for " .. Zombify.State.playerType)
@@ -59,6 +64,8 @@ end
 function ZombifyMusicPlayer.enableDemoMode(playerType)
     ZombifyMusicPlayer.demoMode = true
     ZombifyMusicPlayer.currentPlayer = playerType or "spotify"
+
+    Zombify.State = Zombify.State or {}
     Zombify.State.playerConnected = true
     Zombify.State.playerType = (playerType or "spotify"):gsub("^%l", string.upper)
     print("[ZombifyMusicPlayer] Demo mode enabled for " .. Zombify.State.playerType)
@@ -76,16 +83,16 @@ end
 -- Main update
 function ZombifyMusicPlayer.update()
     -- In demo mode, just ensure we have a track
-    if ZombifyMusicPlayer.demoMode and not Zombify.State.currentTrack then
+    if ZombifyMusicPlayer.demoMode and (not Zombify.State or not Zombify.State.currentTrack) then
         ZombifyMusicPlayer.simulateTrackChange()
     end
 end
 
 -- Update demo mode playback
 function ZombifyMusicPlayer.updateDemo()
-    if not Zombify.State.isPlaying then return end
+    if not Zombify.State or not Zombify.State.isPlaying then return end
 
-    local currentTime = getTimeInMillis()
+    local currentTime = getTimestampMs()
     if not Zombify.State.lastDemoUpdate then
         Zombify.State.lastDemoUpdate = currentTime
         return
@@ -113,14 +120,15 @@ function ZombifyMusicPlayer.simulateTrackChange()
         {title = "Horizon", artist = "Far Wanderers", album = "Beyond", duration = 260000},
     }
 
-    local track = tracks[ZombifyMath.random(1, #tracks)]
+    local track = tracks[math.random(1, #tracks)]
+    Zombify.State = Zombify.State or {}
     Zombify.State.currentTrack = track.title
     Zombify.State.currentArtist = track.artist
     Zombify.State.currentAlbum = track.album
     Zombify.State.duration = track.duration
     Zombify.State.progress = 0
     Zombify.State.isPlaying = true
-    Zombify.State.lastDemoUpdate = getTimeInMillis()
+    Zombify.State.lastDemoUpdate = getTimestampMs()
 end
 
 -- Send playback control command
@@ -133,32 +141,44 @@ end
 -- Handle commands in demo mode
 function ZombifyMusicPlayer.handleDemoCommand(command, params)
     if command == "play_pause" then
-        Zombify.State.isPlaying = not Zombify.State.isPlaying
-        print("[ZombifyMusicPlayer] Demo: " .. (Zombify.State.isPlaying and "Playing" or "Paused"))
+        if Zombify.State then
+            Zombify.State.isPlaying = not Zombify.State.isPlaying
+            print("[ZombifyMusicPlayer] Demo: " .. (Zombify.State.isPlaying and "Playing" or "Paused"))
+        end
     elseif command == "next" then
         ZombifyMusicPlayer.simulateTrackChange()
-        print("[ZombifyMusicPlayer] Demo: Next track - " .. (Zombify.State.currentTrack or "none"))
+        print("[ZombifyMusicPlayer] Demo: Next track - " .. (Zombify.State and Zombify.State.currentTrack or "none"))
     elseif command == "previous" then
         ZombifyMusicPlayer.simulateTrackChange()
-        print("[ZombifyMusicPlayer] Demo: Previous track - " .. (Zombify.State.currentTrack or "none"))
+        print("[ZombifyMusicPlayer] Demo: Previous track - " .. (Zombify.State and Zombify.State.currentTrack or "none"))
     elseif command == "volume" then
         if params and params.volume then
-            Zombify.State.volume = math.max(0, math.min(1, params.volume))
+            if Zombify.State then
+                Zombify.State.volume = math.max(0, math.min(1, params.volume))
+            end
         elseif params and params.delta then
-            Zombify.State.volume = math.max(0, math.min(1, (Zombify.State.volume or 0.5) + params.delta))
+            if Zombify.State then
+                Zombify.State.volume = math.max(0, math.min(1, (Zombify.State.volume or 0.5) + params.delta))
+            end
         end
-        print("[ZombifyMusicPlayer] Demo: Volume " .. math.floor((Zombify.State.volume or 0.5) * 100) .. "%")
+        print("[ZombifyMusicPlayer] Demo: Volume " .. math.floor((Zombify.State and Zombify.State.volume or 0.5) * 100) .. "%")
     end
 end
 
 -- Disconnect all
 function ZombifyMusicPlayer.disconnectAll()
-    Zombify.State.playerConnected = false
-    Zombify.State.playerType = "None"
+    if Zombify.State then
+        Zombify.State.playerConnected = false
+        Zombify.State.playerType = "None"
+    end
     ZombifyMusicPlayer.demoMode = false
     ZombifyMusicPlayer.currentPlayer = nil
     print("[ZombifyMusicPlayer] Disconnected from all players")
 end
 
--- Initialize
-Events.OnInitGlobalModData.Add(ZombifyMusicPlayer.init)
+-- Initialize - only register once
+if not ZombifyMusicPlayer._initialized then
+    ZombifyMusicPlayer._initialized = true
+    Events.OnInitGlobalModData.Add(ZombifyMusicPlayer.init)
+    Events.OnTick.Add(ZombifyMusicPlayer.onTick)
+end
