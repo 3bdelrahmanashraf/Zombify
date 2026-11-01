@@ -23,6 +23,8 @@ ZombifyMusicPlayer.demoMode = false
 ZombifyMusicPlayer.lastStatusCheck = 0
 ZombifyMusicPlayer.statusCheckInterval = 1000 -- 1 second
 ZombifyMusicPlayer.lastCommandId = 0
+ZombifyMusicPlayer.connectionStartTime = 0
+ZombifyMusicPlayer.connecting = false
 
 -- Initialize music player
 function ZombifyMusicPlayer.init()
@@ -73,6 +75,11 @@ function ZombifyMusicPlayer.onTick()
         ZombifyMusicPlayer.readStatusFile()
     end
 
+    -- Handle async connection
+    if ZombifyMusicPlayer.connecting then
+        ZombifyMusicPlayer.checkConnectionAsync()
+    end
+
     -- Process pending commands
     ZombifyMusicPlayer.processCommandQueue()
 
@@ -113,19 +120,12 @@ function ZombifyMusicPlayer.checkControllerStatus()
     end
 end
 
--- Check if process is running (Windows)
+-- Check if process is running (Windows) - simplified, no io.popen
 function ZombifyMusicPlayer.isProcessRunning(pid)
-    if getOS() == "Windows" then
-        -- Use tasklist to check if PID exists
-        local cmd = string.format('tasklist /fi "PID eq %d" 2>nul', pid)
-        local handle = io.popen(cmd)
-        if handle then
-            local result = handle:read("*a")
-            handle:close()
-            return result and result:match(tostring(pid)) ~= nil
-        end
-    end
-    return false
+    -- In PZ Lua, we can't use io.popen.
+    -- For now, assume process is running if PID file exists with valid content.
+    -- The controller manages its own lifecycle.
+    return pid and pid > 0
 end
 
 -- Read status file from controller
@@ -154,31 +154,41 @@ function ZombifyMusicPlayer.readStatusFile()
     ZombifyMusicPlayer.handleMessage("controller", status)
 end
 
--- Connect to a music player type
+-- Connect to a music player type (async, non-blocking)
 function ZombifyMusicPlayer.connect(playerType)
     ZombifyMusicPlayer.disconnectAll()
     ZombifyMusicPlayer.currentPlayer = playerType
     ZombifyMusicPlayer.demoMode = false
+    ZombifyMusicPlayer.connecting = true
+    ZombifyMusicPlayer.connectionStartTime = getTimestampMs()
 
     print("[ZombifyMusicPlayer] Connecting to " .. playerType .. " via controller...")
 
     -- Send connect command to controller
     ZombifyMusicPlayer.sendCommand("connect", {playerType = playerType})
+end
 
-    -- Wait a bit for connection
-    local startTime = getTimestampMs()
-    while getTimestampMs() - startTime < 2000 do
-        -- Check for status update
-        ZombifyMusicPlayer.readStatusFile()
-        if Zombify.State.playerConnected then
-            break
-        end
+-- Async connection check (called from onTick)
+function ZombifyMusicPlayer.checkConnectionAsync()
+    if not ZombifyMusicPlayer.connecting then return end
+
+    local currentTime = getTimestampMs()
+    local elapsed = currentTime - ZombifyMusicPlayer.connectionStartTime
+
+    -- Check for status update
+    ZombifyMusicPlayer.readStatusFile()
+
+    if Zombify.State.playerConnected then
+        ZombifyMusicPlayer.connecting = false
+        print("[ZombifyMusicPlayer] Connected successfully")
+        return
     end
 
-    -- If still not connected, fall back to demo mode
-    if not Zombify.State.playerConnected then
-        print("[ZombifyMusicPlayer] Controller connection failed, enabling demo mode")
-        ZombifyMusicPlayer.enableDemoMode(playerType)
+    -- Timeout after 5 seconds
+    if elapsed > 5000 then
+        ZombifyMusicPlayer.connecting = false
+        print("[ZombifyMusicPlayer] Controller connection timeout, enabling demo mode")
+        ZombifyMusicPlayer.enableDemoMode(ZombifyMusicPlayer.currentPlayer or "spotify")
     end
 end
 
@@ -362,6 +372,7 @@ function ZombifyMusicPlayer.disconnectAll()
     Zombify.State.playerType = "None"
     ZombifyMusicPlayer.demoMode = false
     ZombifyMusicPlayer.currentPlayer = nil
+    ZombifyMusicPlayer.connecting = false
     print("[ZombifyMusicPlayer] Disconnected from all players")
 end
 

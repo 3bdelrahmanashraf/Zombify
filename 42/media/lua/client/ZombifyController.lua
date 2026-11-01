@@ -1,11 +1,12 @@
 -- Zombify Controller Manager
 -- Manages the external Python controller process from within the mod
+-- Uses non-blocking async operations compatible with PZ Lua
 
 ZombifyController = ZombifyController or {}
-ZombifyController.process = nil
 ZombifyController.running = false
 ZombifyController.lastStatusCheck = 0
 ZombifyController.statusCheckInterval = 5000 -- 5 seconds
+ZombifyController.startAttempted = false
 
 -- Controller configuration defaults
 ZombifyController.DefaultConfig = {
@@ -33,15 +34,17 @@ function ZombifyController.init()
         end
     end
 
-    -- Find Python path
+    -- Find Python path (non-blocking)
     ZombifyController.findPython()
 
     -- Find controller script
     ZombifyController.findControllerScript()
 
-    -- Auto-start if enabled
-    if Zombify.Config.controllerAutoStart then
-        ZombifyController.start()
+    -- Auto-start if enabled (deferred to first tick to avoid blocking init)
+    if Zombify.Config.controllerAutoStart and not ZombifyController.startAttempted then
+        ZombifyController.startAttempted = true
+        -- Defer start to next tick to avoid blocking game init
+        Events.OnTick.Add(ZombifyController.deferredStart)
     end
 
     -- Start status check timer
@@ -50,32 +53,20 @@ function ZombifyController.init()
     print("[ZombifyController] Initialized")
 end
 
--- Find Python executable
-function ZombifyController.findPython()
-    local pythonPaths = {
-        "python",
-        "python3",
-        "python.exe",
-        "py",
-        "C:\\Python311\\python.exe",
-        "C:\\Python310\\python.exe",
-        "C:\\Python39\\python.exe",
-        "C:\\Users\\" .. os.getenv("USERNAME") .. "\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
-        "C:\\Users\\" .. os.getenv("USERNAME") .. "\\AppData\\Local\\Programs\\Python\\Python310\\python.exe",
-    }
-
-    for _, path in ipairs(pythonPaths) do
-        -- Test if python exists by trying to run version
-        local result = ZombifyController.runCommand(path .. " --version")
-        if result and result:match("Python") then
-            Zombify.Config.pythonPath = path
-            print("[ZombifyController] Found Python: " .. path)
-            return
-        end
+-- Deferred start (runs on first tick after init)
+function ZombifyController.deferredStart()
+    Events.OnTick.Remove(ZombifyController.deferredStart)
+    if Zombify.Config.controllerAutoStart then
+        ZombifyController.start()
     end
+end
 
-    print("[ZombifyController] Warning: Python not found in standard locations")
+-- Find Python executable (non-blocking - just sets default, actual detection deferred)
+function ZombifyController.findPython()
+    -- In PZ Lua, we can't run commands to detect Python.
+    -- Set a reasonable default and let the batch file handle detection.
     Zombify.Config.pythonPath = "python"
+    print("[ZombifyController] Using default Python path: python")
 end
 
 -- Find controller script
@@ -102,7 +93,7 @@ function ZombifyController.findControllerScript()
     print("[ZombifyController] Using default controller script path")
 end
 
--- Start the controller process
+-- Start the controller process (non-blocking)
 function ZombifyController.start()
     if ZombifyController.running then
         print("[ZombifyController] Already running")
@@ -121,25 +112,20 @@ function ZombifyController.start()
     print("[ZombifyController] Command: " .. cmd)
     print("[ZombifyController] Working dir: " .. workingDir)
 
-    -- Start process using Lua's os.execute with background
-    -- Note: PZ Lua doesn't have direct process management
-    -- We'll use a workaround with os.execute and a batch file on Windows
+    -- Create batch file for background execution
+    ZombifyController.createBatchFile(cmd, workingDir)
 
-    local success = ZombifyController.startProcess(cmd, workingDir)
+    -- Run batch file asynchronously (non-blocking)
+    -- Use a deferred approach to avoid blocking
+    ZombifyController.runBatchFileAsync(workingDir .. "start_controller.bat")
 
-    if success then
-        ZombifyController.running = true
-        ZombifySettings.addLog("Controller started successfully")
-        return true
-    else
-        ZombifySettings.addLog("Failed to start controller")
-        return false
-    end
+    ZombifyController.running = true
+    ZombifySettings.addLog("Controller start requested")
+    return true
 end
 
--- Start process (Windows batch file approach)
-function ZombifyController.startProcess(cmd, workingDir)
-    -- Create a batch file to run the controller in background
+-- Create batch file for controller
+function ZombifyController.createBatchFile(cmd, workingDir)
     local batContent = string.format([[
 @echo off
 cd /d "%s"
@@ -152,12 +138,16 @@ cd /d "%s"
         file:write(batContent)
         file:close()
     end
+end
 
-    -- Run batch file minimized
+-- Run batch file asynchronously (non-blocking)
+function ZombifyController.runBatchFileAsync(batPath)
+    -- In PZ Lua, we can't truly run async.
+    -- The best we can do is use os.execute which may block briefly.
+    -- The batch file itself runs the Python process in background.
     local runCmd = string.format('cmd /c start /min "" "%s"', batPath)
-    local result = os.execute(runCmd)
-
-    return result == 0
+    -- Use pcall to avoid errors if os.execute has issues
+    pcall(function() os.execute(runCmd) end)
 end
 
 -- Stop the controller process
@@ -172,9 +162,9 @@ function ZombifyController.stop()
     -- Send stop command via HTTP if possible
     ZombifyController.sendStopCommand()
 
-    -- Also try to kill the process
+    -- Try to kill the process (non-blocking)
     if getOS() == "Windows" then
-        os.execute('taskkill /f /im python.exe /fi "windowtitle eq *zombify_controller*" 2>nul')
+        pcall(function() os.execute('taskkill /f /im python.exe /fi "windowtitle eq *zombify_controller*" 2>nul') end)
     end
 
     ZombifyController.running = false
@@ -182,15 +172,16 @@ function ZombifyController.stop()
     return true
 end
 
--- Restart controller
+-- Restart controller (non-blocking)
 function ZombifyController.restart()
     ZombifyController.stop()
-    -- Small delay then start
-    local startTime = getTimestampMs()
-    while getTimestampMs() - startTime < 1000 do
-        -- Wait 1 second
-    end
-    return ZombifyController.start()
+    -- Schedule restart on next tick instead of blocking
+    Events.OnTick.Add(ZombifyController.deferredRestart)
+end
+
+function ZombifyController.deferredRestart()
+    Events.OnTick.Remove(ZombifyController.deferredRestart)
+    ZombifyController.start()
 end
 
 -- Send stop command via HTTP
@@ -198,7 +189,7 @@ function ZombifyController.sendStopCommand()
     local host = Zombify.Config.controllerHost or "127.0.0.1"
     local port = Zombify.Config.controllerHttpPort or 8766
 
-    -- We'll use a simple socket approach if available
+    -- In a real implementation, we'd make an HTTP request
     -- For now, just log
     print("[ZombifyController] Sending stop command to http://" .. host .. ":" .. port)
 end
@@ -212,9 +203,9 @@ function ZombifyController.openSpotifyAuth()
     ZombifySettings.addLog("Opening Spotify auth: " .. url)
 
     if getOS() == "Windows" then
-        os.execute('start "" "' .. url .. '"')
+        pcall(function() os.execute('start "" "' .. url .. '"') end)
     else
-        os.execute('xdg-open "' .. url .. '"')
+        pcall(function() os.execute('xdg-open "' .. url .. '"') end)
     end
 end
 
@@ -227,9 +218,9 @@ function ZombifyController.openYTMusicSetup()
     ZombifySettings.addLog("Opening YTMusic setup: " .. url)
 
     if getOS() == "Windows" then
-        os.execute('start "" "' .. url .. '"')
+        pcall(function() os.execute('start "" "' .. url .. '"') end)
     else
-        os.execute('xdg-open "' .. url .. '"')
+        pcall(function() os.execute('xdg-open "' .. url .. '"') end)
     end
 end
 
@@ -240,12 +231,9 @@ function ZombifyController.testConnection()
 
     ZombifySettings.addLog("Testing WebSocket connection to ws://" .. host .. ":" .. port)
 
-    -- Try to connect via socket
-    -- This is a simplified test - in reality we'd use a proper WebSocket client
     local wsUrl = "ws://" .. host .. ":" .. port
     ZombifySettings.addLog("Test: " .. wsUrl)
 
-    -- Update status labels
     if ZombifySettings.updateStatusDisplay then
         ZombifySettings.updateStatusDisplay()
     end
@@ -269,25 +257,24 @@ end
 
 -- Check if controller process is running
 function ZombifyController.checkProcessStatus()
-    -- Try HTTP status endpoint
-    local host = Zombify.Config.controllerHost or "127.0.0.1"
-    local port = Zombify.Config.controllerHttpPort or 8766
+    -- Check if PID file exists
+    local pidFile = getFilePath("") .. "controller/comm/controller.pid"
+    local file = getFileReader(pidFile, true)
 
-    -- In a real implementation, we'd make an HTTP request
-    -- For now, we'll use a simple approach
-    ZombifyController.running = ZombifyController.isProcessRunning()
-end
+    local processRunning = false
+    if file then
+        local content = file:readLine()
+        file:close()
+        if content and content ~= "" then
+            processRunning = true
+        end
+    end
 
--- Check if process is running (simplified)
-function ZombifyController.isProcessRunning()
-    -- This is a placeholder - in reality we'd check the actual process
-    -- For now, return the running state
-    return ZombifyController.running
+    ZombifyController.running = processRunning
 end
 
 -- Check if Spotify is authenticated
 function ZombifyController.isSpotifyAuthenticated()
-    -- Check if Spotify token file exists
     local tokenFile = getFilePath("") .. "controller/tokens/spotify_token.json"
     local file = getFileReader(tokenFile, true)
     if file then
@@ -311,19 +298,6 @@ end
 -- Check if controller is running
 function ZombifyController.isRunning()
     return ZombifyController.running
-end
-
--- Run command and capture output
-function ZombifyController.runCommand(cmd)
-    -- This is a simplified version - PZ Lua doesn't have popen
-    -- We'll return nil to indicate we can't capture output
-    return nil
-end
-
--- Get file path helper
-function getFilePath(relative)
-    -- Return the mod directory path
-    return getDir("") -- This returns the current working directory
 end
 
 -- Initialize on game start
