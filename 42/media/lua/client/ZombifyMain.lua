@@ -10,6 +10,37 @@ Zombify._initialized = false
 Zombify.Config = Zombify.Config or {}
 Zombify.State = Zombify.State or {}
 
+-- Convert PZ key code to key name for comparison with stored keybinds
+function Zombify.getKeyName(key)
+    if type(key) == "string" then return key end
+    -- Try to get key name from Keyboard
+    if Keyboard and Keyboard.getKeyName then
+        return Keyboard.getKeyName(key)
+    end
+    -- Fallback: common key codes
+    local keyNames = {
+        [282] = "KEY_F10",
+        [200] = "KEY_F1",
+        [201] = "KEY_F2",
+        [202] = "KEY_F3",
+        [203] = "KEY_F4",
+        [204] = "KEY_F5",
+        [205] = "KEY_F6",
+        [206] = "KEY_F7",
+        [207] = "KEY_F8",
+        [208] = "KEY_F9",
+        [209] = "KEY_F10",
+        [210] = "KEY_F11",
+        [211] = "KEY_F12",
+        [19] = "KEY_MEDIA_PLAY_PAUSE",
+        [17] = "KEY_MEDIA_NEXT",
+        [16] = "KEY_MEDIA_PREV",
+        [18] = "KEY_MEDIA_VOLUME_UP",
+        [17] = "KEY_MEDIA_VOLUME_DOWN",
+    }
+    return keyNames[key] or tostring(key)
+end
+
 -- Initialize the mod
 function Zombify.init()
     if Zombify._initialized then return end
@@ -88,22 +119,24 @@ function Zombify.onTick()
     end
 end
 
--- Key pressed event - FIXED: Proper key handling
+-- Key pressed event - Proper key handling
 function Zombify.onKeyPressed(key)
     if not Zombify.Config.enabled then return end
 
+    local keyName = Zombify.getKeyName(key)
+
     -- Check each keybind directly
-    if key == Zombify.Config.keybindToggle then
+    if keyName == Zombify.Config.keybindToggle then
         Zombify.toggleOverlay()
-    elseif key == Zombify.Config.keybindPlayPause then
+    elseif keyName == Zombify.Config.keybindPlayPause then
         Zombify.controlPlayPause()
-    elseif key == Zombify.Config.keybindNext then
+    elseif keyName == Zombify.Config.keybindNext then
         Zombify.controlNext()
-    elseif key == Zombify.Config.keybindPrev then
+    elseif keyName == Zombify.Config.keybindPrev then
         Zombify.controlPrev()
-    elseif key == Zombify.Config.keybindVolumeUp then
+    elseif keyName == Zombify.Config.keybindVolumeUp then
         Zombify.controlVolumeUp()
-    elseif key == Zombify.Config.keybindVolumeDown then
+    elseif keyName == Zombify.Config.keybindVolumeDown then
         Zombify.controlVolumeDown()
     end
 end
@@ -172,7 +205,7 @@ function Zombify.controlVolumeDown()
     ZombifyMusicPlayer.sendCommand("volume", {delta = -0.1})
 end
 
--- Create Mod Options panel - FIXED: Proper ModOptions integration
+-- Create Mod Options panel
 function Zombify.createModOptions()
     if not ModOptions or not ModOptions.getInstance then
         print("[Zombify] ModOptions not available, skipping options panel creation")

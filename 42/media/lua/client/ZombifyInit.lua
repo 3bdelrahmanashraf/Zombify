@@ -146,6 +146,7 @@ if isClient() then
         -- This is the standard way in PZ Lua
         Commands = Commands or {}
         Commands.zombify = zombifyCommand
+        print("[Zombify] Console command '/zombify' registered")
     end
 
     -- Register on game start to ensure Commands table exists
