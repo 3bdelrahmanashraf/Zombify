@@ -16,6 +16,10 @@ function Zombify.init()
     -- Load saved configuration
     Zombify.loadConfig()
 
+    -- Load required modules
+    require "ZombifyController"
+    require "ZombifyMusicPlayer"
+
     -- Register events
     Events.OnGameStart.Add(Zombify.onGameStart)
     Events.OnTick.Add(Zombify.onTick)
@@ -254,11 +258,6 @@ function Zombify.getOverlayPosition()
     end
 
     return x, y, ow, oh
-end
-
--- Console commands
-function Zombify.registerCommands()
-    -- Commands are handled via Events.OnClientCommand
 end
 
 -- Initialize

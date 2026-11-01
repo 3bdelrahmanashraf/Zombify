@@ -10,6 +10,7 @@ if isClient() then
     require "ZombifyUI"
     require "ZombifySettings"
     require "ZombifyMusicPlayer"
+    require "ZombifyController"
 end
 
 -- Mod metadata
@@ -84,11 +85,33 @@ if isClient() then
                 print("  Artist: " .. (Zombify.State.currentArtist or "None"))
                 print("  Volume: " .. math.floor((Zombify.State.volume or 0.5) * 100) .. "%")
                 print("  Demo Mode: " .. tostring(ZombifyMusicPlayer.demoMode))
+                print("  Controller: " .. (ZombifyController.isRunning() and "Running" or "Stopped"))
             elseif cmd == "demo" then
                 if args[2] then
                     ZombifyMusicPlayer.enableDemoMode(args[2])
                 else
                     ZombifyMusicPlayer.enableDemoMode("spotify")
+                end
+            elseif cmd == "controller" then
+                if args[2] then
+                    local subcmd = args[2]:lower()
+                    if subcmd == "start" then
+                        ZombifyController.start()
+                    elseif subcmd == "stop" then
+                        ZombifyController.stop()
+                    elseif subcmd == "restart" then
+                        ZombifyController.restart()
+                    elseif subcmd == "spotify" then
+                        ZombifyController.openSpotifyAuth()
+                    elseif subcmd == "ytmusic" then
+                        ZombifyController.openYTMusicSetup()
+                    elseif subcmd == "test" then
+                        ZombifyController.testConnection()
+                    else
+                        print("[Zombify] Controller commands: start, stop, restart, spotify, ytmusic, test")
+                    end
+                else
+                    print("[Zombify] Controller commands: start, stop, restart, spotify, ytmusic, test")
                 end
             elseif cmd == "help" then
                 print("[Zombify] Commands:")
@@ -104,6 +127,7 @@ if isClient() then
                 print("  /zombify disconnect - Disconnect from music player")
                 print("  /zombify status - Show current status")
                 print("  /zombify demo [player] - Enable demo mode")
+                print("  /zombify controller <cmd> - Controller management (start|stop|restart|spotify|ytmusic|test)")
                 print("  /zombify help - Show this help")
             else
                 print("[Zombify] Unknown command: " .. cmd)
