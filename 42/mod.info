@@ -1,0 +1,9 @@
+name=Zombify
+id=Zombify
+author=3bdelrahmanashraf
+description=Music player integration for Project Zomboid - Display and control Spotify, YouTube Music, and local files in-game with track info, album art, and playback controls.
+poster=poster.png
+icon=icon.png
+modversion=1.0.0
+versionMin=42.0.0
+url=https://github.com/3bdelrahmanashraf/Zombify
